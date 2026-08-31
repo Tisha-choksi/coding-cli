@@ -19,12 +19,12 @@ class Agent:
     def send(self, user_input):
         """Send a user message, letting the model call tools as needed.
 
-        Returns the final assistant text reply, or None on error.
+        Prints and returns the final assistant text reply, or None on error.
         """
         self.messages.append({"role": "user", "content": user_input})
 
         for _ in range(MAX_TOOL_ROUNDS):
-            result = llm.stream_chat(self.messages, tools=SCHEMAS)
+            result = llm.chat(self.messages, tools=SCHEMAS)
 
             if result is None:
                 self.messages.pop()
@@ -38,11 +38,13 @@ class Agent:
             self.messages.append(assistant_msg)
 
             if not tool_calls:
+                print(f"Agent: {content}")
                 return content
 
             for call in tool_calls:
                 self._run_tool_call(call)
 
+        print(f"Agent: {content}")
         return content
 
     def _run_tool_call(self, call):
@@ -55,7 +57,7 @@ class Agent:
             output = f"Error: unknown tool '{name}'"
         else:
             arg_str = ", ".join(f"{k}={v!r}" for k, v in args.items())
-            print(f"\n[tool] {name}({arg_str})")
+            print(f"[tool] {name}({arg_str})")
             try:
                 output = fn(**args)
             except Exception as exc:

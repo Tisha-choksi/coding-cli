@@ -22,7 +22,6 @@ def main():
         if user_input.lower() in {"exit", "quit"}:
             print("Goodbye.")
             break
-        print("Agent: ", end="", flush=True)
         agent.send(user_input)
 if __name__ == "__main__":
     sys.exit(main())

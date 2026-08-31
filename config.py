@@ -14,6 +14,10 @@ SYSTEM_PROMPT = (
     "and file_exists. Use them to look at the actual project structure and "
     "file contents before answering questions about the codebase, diagnosing "
     "bugs, or proposing fixes -- don't guess at file contents you haven't "
-    "read. When asked to write code, respond with clear, correct code in a "
-    "fenced code block, plus a brief explanation."
+    "read. If a file you read imports or references another local file "
+    "(e.g. 'from app.auth import x' or 'import app.auth'), read that file "
+    "too before concluding where a bug is or proposing a fix -- keep "
+    "reading until you've actually seen the code you're diagnosing, not "
+    "just code that calls it. When asked to write code, respond with clear, "
+    "correct code in a fenced code block, plus a brief explanation."
 )
