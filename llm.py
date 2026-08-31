@@ -1,21 +1,14 @@
 """Client for talking to a local Ollama model."""
-
 import json
-
 import requests
-
 import config
-
-
 def stream_chat(messages):
     """Send messages to Ollama's chat endpoint and stream the reply.
-
     Prints each token as it arrives and returns the full reply text,
     or None if the request failed.
     """
     url = f"{config.OLLAMA_HOST}/api/chat"
     payload = {"model": config.MODEL, "messages": messages, "stream": True}
-
     try:
         response = requests.post(url, json=payload, stream=True, timeout=120)
         response.raise_for_status()
@@ -28,7 +21,6 @@ def stream_chat(messages):
     except requests.exceptions.HTTPError as exc:
         print(f"\n[error] Ollama returned an error: {exc}\n")
         return None
-
     full_reply = ""
     for line in response.iter_lines():
         if not line:
