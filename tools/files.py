@@ -46,6 +46,41 @@ def file_exists(path):
     return os.path.exists(_resolve(path))
 
 
+def create_file(path, content=""):
+    """Create a new file with `content`. Fails if the file already exists."""
+    target = _resolve(path)
+    if os.path.exists(target):
+        return f"Error: '{path}' already exists. Use edit_file to modify it."
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    with open(target, "w", encoding="utf-8") as f:
+        f.write(content)
+    return f"Created '{path}' ({len(content)} bytes)."
+
+
+def edit_file(path, content):
+    """Overwrite an existing file's full contents with `content`. Fails if it doesn't exist."""
+    target = _resolve(path)
+    if not os.path.isfile(target):
+        return f"Error: '{path}' does not exist. Use create_file to create it."
+    with open(target, "w", encoding="utf-8") as f:
+        f.write(content)
+    return f"Updated '{path}' ({len(content)} bytes)."
+
+
+def delete_file(path):
+    """Delete a file."""
+    target = _resolve(path)
+    if not os.path.isfile(target):
+        return f"Error: '{path}' does not exist or is not a file."
+    os.remove(target)
+    return f"Deleted '{path}'."
+
+
+# Tools that touch the filesystem -- these require user confirmation
+# before agent.py will actually call them.
+MUTATING = {"create_file", "edit_file", "delete_file"}
+
+
 # Ollama/OpenAI-style tool schemas so the model knows these functions exist.
 SCHEMAS = [
     {
@@ -97,10 +132,75 @@ SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_file",
+            "description": (
+                "Create a brand new file with the given content, given a path "
+                "relative to the project root. Fails if the file already exists "
+                "-- use edit_file for existing files. Requires user approval."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Relative path of the new file."},
+                    "content": {"type": "string", "description": "Full contents of the new file."},
+                },
+                "required": ["path", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "edit_file",
+            "description": (
+                "Overwrite an existing file with new content, given a path "
+                "relative to the project root. `content` must be the file's "
+                "COMPLETE new contents, not a partial snippet or diff -- read "
+                "the file first, then send the whole file back with your "
+                "changes applied. Fails if the file doesn't exist. Requires "
+                "user approval."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Relative path of the file to edit."},
+                    "content": {
+                        "type": "string",
+                        "description": "The complete new contents of the file (not a diff).",
+                    },
+                },
+                "required": ["path", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_file",
+            "description": (
+                "Permanently delete a file, given a path relative to the "
+                "project root. Requires user approval. Only call this when "
+                "the user has clearly asked for a file to be removed."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Relative path of the file to delete."}
+                },
+                "required": ["path"],
+            },
+        },
+    },
 ]
 
 FUNCTIONS = {
     "list_files": list_files,
     "read_file": read_file,
     "file_exists": file_exists,
+    "create_file": create_file,
+    "edit_file": edit_file,
+    "delete_file": delete_file,
 }
