@@ -37,9 +37,26 @@ change; for `create_file`, a preview of the new file's contents; for
 written, overwritten, or removed unless you type `y`. If you decline,
 the agent is told the change was denied and won't retry it.
 
-The agent still can't run commands (no shell/terminal tool yet) --
-so it can't run your code, install packages, or run tests on its own.
-That's a later phase.
+## Phase 4 -- Terminal access
+
+The agent can now run shell commands:
+
+- `run_command(command, timeout=60)` -- runs `command` in the project
+  root and returns stdout, stderr, and exit code (output over ~4000
+  chars is truncated so it doesn't blow out the model's context).
+
+Like the write tools, `run_command` goes through the same permission
+check -- you see the exact command before it runs, and nothing
+executes without a `y`.
+
+This is what closes the loop and makes it feel like an actual coding
+agent: it can run your tests, see a real failure, use `read_file` /
+`edit_file` to fix the actual cause, and run the tests again to
+confirm -- all in one request, each step still gated by your approval:
+
+```
+run_command (pytest) -> failure -> agent reads the error -> edit_file -> run_command again -> pass
+```
 
 ### Setup
 

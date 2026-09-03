@@ -1,11 +1,11 @@
 """Agent conversation loop.
 
-Phase 3: the agent can now also propose file changes (create_file,
-edit_file, delete_file). It never touches disk directly -- every one
-of these goes through a permission check (a y/N prompt to the user)
-before agent.py calls the real filesystem function:
+Phase 4: the agent can now also run shell commands (run_command), e.g.
+to run tests and see if a fix actually worked. Like file writes, it
+never runs a command directly -- every mutating tool call goes through
+a permission check (a y/N prompt to the user) first:
 
-    LLM -> tool request -> agent -> permission check -> filesystem
+    LLM -> tool request -> agent -> permission check -> filesystem/shell
 """
 import difflib
 import json
@@ -13,9 +13,23 @@ import re
 
 import config
 import llm
-from tools.files import SCHEMAS, FUNCTIONS, MUTATING, read_file
+from tools.files import (
+    SCHEMAS as FILE_SCHEMAS,
+    FUNCTIONS as FILE_FUNCTIONS,
+    MUTATING as FILE_MUTATING,
+    read_file,
+)
+from tools.terminal import (
+    SCHEMAS as TERMINAL_SCHEMAS,
+    FUNCTIONS as TERMINAL_FUNCTIONS,
+    MUTATING as TERMINAL_MUTATING,
+)
 
-MAX_TOOL_ROUNDS = 12
+SCHEMAS = FILE_SCHEMAS + TERMINAL_SCHEMAS
+FUNCTIONS = {**FILE_FUNCTIONS, **TERMINAL_FUNCTIONS}
+MUTATING = FILE_MUTATING | TERMINAL_MUTATING
+
+MAX_TOOL_ROUNDS = 20
 
 # This local model occasionally leaks chat-template special tokens (used to
 # mark tool calls/results in the prompt) into its own generated `content`
@@ -76,10 +90,10 @@ class Agent:
         if fn is None:
             output = f"Error: unknown tool '{name}'"
         elif name in MUTATING and not self._confirm(name, args):
+            target = args.get("path") or args.get("command", "<unknown>")
             output = (
-                f"The user did NOT approve this {name} call on "
-                f"'{args.get('path')}'. Do not make this change; ask the "
-                "user what they'd like instead if relevant."
+                f"The user did NOT approve this {name} call ('{target}'). "
+                "Do not repeat it; ask the user what they'd like instead if relevant."
             )
         else:
             arg_str = ", ".join(
@@ -123,5 +137,9 @@ class Agent:
         elif name == "delete_file":
             print(f"\n[permission] Agent wants to DELETE '{path}'.")
 
-        answer = input("Apply this change? [y/N]: ").strip().lower()
+        elif name == "run_command":
+            print(f"\n[permission] Agent wants to RUN: {args.get('command', '<unknown>')}")
+
+        prompt = "Run this command?" if name == "run_command" else "Apply this change?"
+        answer = input(f"{prompt} [y/N]: ").strip().lower()
         return answer in ("y", "yes")
