@@ -8,6 +8,8 @@ import os
 
 import config
 
+MAX_FILE_CHARS = 20000
+
 
 def _resolve(path):
     """Resolve a path relative to PROJECT_ROOT and reject escapes (e.g. '../../etc')."""
@@ -36,9 +38,17 @@ def read_file(path):
         return f"Error: '{path}' does not exist."
     try:
         with open(target, "r", encoding="utf-8") as f:
-            return f.read()
+            text = f.read()
     except UnicodeDecodeError:
         return f"Error: '{path}' is not a readable text file."
+
+    if len(text) > MAX_FILE_CHARS:
+        text = (
+            text[:MAX_FILE_CHARS]
+            + f"\n... [truncated, {len(text) - MAX_FILE_CHARS} more chars -- "
+            "use grep to search within this file instead of reading it whole]"
+        )
+    return text
 
 
 def file_exists(path):

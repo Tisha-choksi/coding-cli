@@ -5,6 +5,7 @@ Always gated behind a permission check in agent.py (see MUTATING below);
 this module never runs anything on its own.
 """
 
+import re
 import subprocess
 
 import config
@@ -12,9 +13,40 @@ import config
 MAX_OUTPUT_CHARS = 4000
 DEFAULT_TIMEOUT = 60
 
+# Commands matching any of these are refused outright, even if the user
+# approves them -- a hard floor under the permission-check UI, in case a
+# risky command slips past a fat-fingered "y". Not exhaustive; it's a
+# denylist for the worst, hardest-to-undo cases, not a sandbox.
+_DANGEROUS_PATTERNS = [
+    r"\brm\s+(-\w*r\w*f\w*|-\w*f\w*r\w*)\s+(/|~|\*|\.\.?)(\s|$)",  # rm -rf /, ~, *, .
+    r":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:",  # classic fork bomb
+    r"\bmkfs(\.\w+)?\b",
+    r"\bdd\s+.*\bof=/dev/",
+    r"\b(shutdown|reboot)\b",
+    r">\s*/dev/sd[a-z]\d*\b",
+    r"\bformat\s+[a-zA-Z]:",  # Windows: format C:
+    r"\b(rd|rmdir)\s+/s\b.*[a-zA-Z]:\\?\s*$",  # rd /s C:\
+    r"\bdel\s+/[a-z]*f[a-z]*\s+/[a-z]*s[a-z]*\b",  # del /f /s ...
+    r"git\s+push\s+.*--force",
+    r"git\s+reset\s+--hard",
+    r"\b(curl|wget)\b[^|]*\|\s*(sh|bash|powershell|iex)\b",  # pipe-to-shell
+]
+_DANGEROUS_RE = [re.compile(p, re.IGNORECASE) for p in _DANGEROUS_PATTERNS]
+
+
+def is_dangerous(command):
+    """True if `command` matches a denylisted destructive pattern."""
+    return any(p.search(command) for p in _DANGEROUS_RE)
+
 
 def run_command(command, timeout=DEFAULT_TIMEOUT):
     """Run `command` in a shell, cwd'd to the project root. Returns captured output."""
+    if is_dangerous(command):
+        return (
+            f"Blocked: '{command}' matches a denylisted destructive pattern "
+            "and will not be run. If this was intentional, run it yourself "
+            "outside the agent."
+        )
     try:
         result = subprocess.run(
             command,
