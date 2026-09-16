@@ -67,8 +67,28 @@ every file one by one on a larger project:
 - `search_files(pattern, path=".")` -- find files by name glob (e.g. `*.ts`)
 - `grep(query, path=".", regex=False)` -- search file contents, returns `file:line: text` matches
 
-Both skip `node_modules`, `.git`, `__pycache__`, `.next`, `venv`, and
-similar directories automatically.
+All three skip `node_modules`, `.git`, `__pycache__`, `.next`, `venv`,
+and similar directories automatically.
+
+## Phase 6 -- find_symbol (definitions, not just mentions)
+
+- `find_symbol(name, path=".")` -- find where a function/class/variable
+  is actually **defined**, not every place it's mentioned.
+
+`grep("login")` returns every line containing "login" -- the
+definition, the import, every call site, even an unrelated mention in
+a README. `find_symbol("login")` filters that down to just the
+definition line, using a regex heuristic for common definition
+keywords across languages (`def`, `class`, `function`, `func`,
+`interface`, `type`, `struct`, `const`, etc.) -- not a real parser, but
+enough to separate "defined here" from "used here".
+
+The system prompt now steers the agent to search first on anything
+beyond a trivial project: use `grep`/`search_files` to find the
+relevant files by keyword, `find_symbol` to jump straight to a known
+symbol's definition, and only `read_file` the files that actually
+turned up -- instead of listing/reading the whole tree, which burns
+context fast on a real codebase.
 
 **Hardened `run_command`.** Beyond the y/N permission prompt, a fixed
 denylist of destructive patterns (`rm -rf /`, force-push, `git reset
