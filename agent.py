@@ -23,13 +23,20 @@ from tools.terminal import (
     SCHEMAS as TERMINAL_SCHEMAS,
     FUNCTIONS as TERMINAL_FUNCTIONS,
     MUTATING as TERMINAL_MUTATING,
+    is_dangerous,
 )
+from tools.search import SCHEMAS as SEARCH_SCHEMAS, FUNCTIONS as SEARCH_FUNCTIONS
 
-SCHEMAS = FILE_SCHEMAS + TERMINAL_SCHEMAS
-FUNCTIONS = {**FILE_FUNCTIONS, **TERMINAL_FUNCTIONS}
+SCHEMAS = FILE_SCHEMAS + TERMINAL_SCHEMAS + SEARCH_SCHEMAS
+FUNCTIONS = {**FILE_FUNCTIONS, **TERMINAL_FUNCTIONS, **SEARCH_FUNCTIONS}
 MUTATING = FILE_MUTATING | TERMINAL_MUTATING
 
 MAX_TOOL_ROUNDS = 20
+
+# Cap on stored conversation messages (system prompt + this many most
+# recent), so a long session with lots of tool output doesn't eventually
+# overflow the model's context window.
+MAX_HISTORY_MESSAGES = 60
 
 # This local model occasionally leaks chat-template special tokens (used to
 # mark tool calls/results in the prompt) into its own generated `content`
@@ -55,6 +62,7 @@ class Agent:
         self.messages.append({"role": "user", "content": user_input})
 
         for _ in range(MAX_TOOL_ROUNDS):
+            self._trim_history()
             result = llm.chat(self.messages, tools=SCHEMAS)
 
             if result is None:
@@ -77,6 +85,12 @@ class Agent:
 
         print(f"Agent: {content}")
         return content
+
+    def _trim_history(self):
+        """Keep the system message plus only the most recent messages."""
+        if len(self.messages) > MAX_HISTORY_MESSAGES:
+            system = self.messages[0]
+            self.messages = [system] + self.messages[-(MAX_HISTORY_MESSAGES - 1):]
 
     def _run_tool_call(self, call):
         name = call["function"]["name"]
@@ -138,7 +152,14 @@ class Agent:
             print(f"\n[permission] Agent wants to DELETE '{path}'.")
 
         elif name == "run_command":
-            print(f"\n[permission] Agent wants to RUN: {args.get('command', '<unknown>')}")
+            command = args.get("command", "<unknown>")
+            if is_dangerous(command):
+                print(
+                    f"\n[blocked] This command matches a denylisted destructive "
+                    f"pattern and will not run, even with approval:\n  {command}"
+                )
+                return False
+            print(f"\n[permission] Agent wants to RUN: {command}")
 
         prompt = "Run this command?" if name == "run_command" else "Apply this change?"
         answer = input(f"{prompt} [y/N]: ").strip().lower()
