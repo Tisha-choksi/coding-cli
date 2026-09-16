@@ -58,6 +58,33 @@ confirm -- all in one request, each step still gated by your approval:
 run_command (pytest) -> failure -> agent reads the error -> edit_file -> run_command again -> pass
 ```
 
+## Phase 5 -- Search tools, command safety, and memory limits
+
+Three quality-of-life/safety additions:
+
+**Search tools** (`tools/search.py`), so the agent doesn't have to read
+every file one by one on a larger project:
+- `search_files(pattern, path=".")` -- find files by name glob (e.g. `*.ts`)
+- `grep(query, path=".", regex=False)` -- search file contents, returns `file:line: text` matches
+
+Both skip `node_modules`, `.git`, `__pycache__`, `.next`, `venv`, and
+similar directories automatically.
+
+**Hardened `run_command`.** Beyond the y/N permission prompt, a fixed
+denylist of destructive patterns (`rm -rf /`, force-push, `git reset
+--hard`, disk formatting, fork bombs, pipe-to-shell installs, etc.) is
+blocked outright -- the agent isn't even asked for approval on these,
+they're refused before the prompt appears. This is a floor under human
+approval, not a sandbox -- it catches the worst, hardest-to-undo
+commands, not everything risky.
+
+**Memory limits**, so a long session doesn't eventually overflow the
+model's context window:
+- `read_file` truncates any file over ~20,000 characters (use `grep`
+  to search inside large files instead of reading them whole).
+- Conversation history is capped at `agent.MAX_HISTORY_MESSAGES` (60)
+  -- the system prompt is always kept, oldest messages drop first.
+
 ### Setup
 
 1. Install [Ollama](https://ollama.com) and make sure it's running:
