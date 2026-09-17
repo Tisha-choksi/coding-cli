@@ -31,15 +31,44 @@ def chat(messages, tools=None):
     content = message.get("content", "")
     tool_calls = message.get("tool_calls") or []
 
-    if not tool_calls:
+    if not tool_calls and tools:
         # Some local models emit a tool call as raw JSON text in `content`
         # instead of using Ollama's structured tool_calls field. Catch that.
+        # Only bother looking when `tools` was actually offered -- otherwise
+        # a plain-text reply (e.g. a summary) that happens to contain a
+        # brace-balanced {"name": ...} substring could be misread as one.
         fallback = _extract_fallback_tool_calls(content)
         if fallback:
             tool_calls = fallback
             content = ""
 
     return {"content": content, "tool_calls": tool_calls}
+
+
+SUMMARIZE_PROMPT = (
+    "You are compressing part of an AI coding agent's past conversation "
+    "into a short factual summary so the agent can continue the task "
+    "without the full transcript. Preserve: the user's overall goal, "
+    "which files were read/created/edited/deleted and why, commands that "
+    "were run and their results, bugs found and whether they were fixed, "
+    "and anything still unresolved. Drop pleasantries and don't restate "
+    "the same fact twice. Be concise -- short bullet points, not prose. "
+    "Output ONLY the summary text, no preamble like 'Here is a summary'."
+)
+
+
+def summarize(existing_summary, conversation_text):
+    """Condense `conversation_text` (plus any prior `existing_summary`) into
+    a short summary. Returns the new summary string, or None on failure."""
+    messages = [{"role": "system", "content": SUMMARIZE_PROMPT}]
+    if existing_summary:
+        messages.append({"role": "user", "content": f"Existing summary so far:\n{existing_summary}"})
+    messages.append({"role": "user", "content": f"Conversation to fold in:\n{conversation_text}"})
+
+    result = chat(messages)  # no tools -- this is a plain summarization call
+    if result is None:
+        return None
+    return result["content"].strip() or None
 
 
 _TAGGED_RE = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)

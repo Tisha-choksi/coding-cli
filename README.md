@@ -98,12 +98,58 @@ they're refused before the prompt appears. This is a floor under human
 approval, not a sandbox -- it catches the worst, hardest-to-undo
 commands, not everything risky.
 
-**Memory limits**, so a long session doesn't eventually overflow the
-model's context window:
-- `read_file` truncates any file over ~20,000 characters (use `grep`
-  to search inside large files instead of reading them whole).
-- Conversation history is capped at `agent.MAX_HISTORY_MESSAGES` (60)
-  -- the system prompt is always kept, oldest messages drop first.
+**Memory limits**: `read_file` truncates any file over ~20,000
+characters (use `grep` to search inside large files instead of
+reading them whole). Conversation-length limits got a proper redesign
+in Phase 7, below.
+
+## Phase 7 -- Context management
+
+Every request the agent sends to the model is actually:
+
+```
+system prompt + user request + project structure + relevant files +
+tool outputs + previous actions + errors
+```
+
+That can't be kept forever -- eventually it would overflow the
+model's context window. `context.py` introduces `ContextManager`,
+which replaces the flat "just cap the message count" approach from
+Phase 5 with structured tracking:
+
+- **Conversation history** -- the rolling window of raw messages
+- **Current task** -- the latest user request, restated to the model
+  every turn so it isn't lost even after older turns are compressed away
+- **Relevant files** -- which files were read/created/edited/deleted
+  this session, deduplicated (the latest action wins)
+- **Tool results** -- a bounded log of the last 30 tool calls and their
+  output
+- **Errors** -- a bounded log of failures: non-zero `run_command` exit
+  codes, tool errors, and commands blocked by the denylist
+- **Summary** -- condensed text of everything folded away so far
+
+When the raw history crosses ~40,000 characters, the agent compresses:
+
+```
+old conversation -> summarizer (LLM call) -> task summary -> agent continues
+```
+
+The oldest messages (always cut on a clean user-turn boundary, so a
+tool result never gets stranded without the call that produced it) are
+handed to the model with a dedicated summarization prompt, and the
+result replaces them in `summary` -- the most recent messages stay
+raw and untouched. If the summarization call itself fails (e.g. Ollama
+is unreachable), the old messages are still dropped rather than kept
+forever -- it falls back to a hard trim instead of getting stuck.
+
+Every message sent to the model is now assembled fresh each turn from
+these pieces (system prompt + current task + summary + files touched
++ recent errors + raw recent history) rather than being one
+ever-growing list.
+
+Type `context` at the prompt to inspect the agent's state at any time
+-- task, history size, summary, files touched, and recent errors --
+without spending a model call.
 
 ### Setup
 
@@ -144,7 +190,9 @@ You: Fix the login bug.
 ```
 
 The agent will call `list_files`, `read_file`, etc. as needed (printed
-as `[tool] ...` lines) before giving its answer.
+as `[tool] ...` lines) before giving its answer. Type `context` at any
+point to see the agent's current task, files touched, and any recent
+errors without spending a model call.
 
 ### Configuration
 
